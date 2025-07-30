@@ -46,10 +46,8 @@ class AzureBlobClient
                 'x-ms-blob-type' => 'BlockBlob',
                 'Content-Type' => $contentType,
                 'Content-Length' => strlen($content),
-                'x-ms-meta-uploaded-at' => gmdate('c'),
-                'x-ms-meta-original-name' => $fileName,
             ];
-            
+
             $headers['Authorization'] = $this->generateSharedKeySignature('PUT', $url, $headers, $content);
             
             $response = $this->httpClient->put($url, [

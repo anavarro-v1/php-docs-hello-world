@@ -66,8 +66,6 @@ class DocumentController
                 return $this->errorResponse('No content provided', 400);
             }
             
-            $fileName = $this->sanitizeFileName($fileName);
-            
             return $this->blobClient->uploadDocument($fileName, $content, $contentType);
             
         } catch (\Exception $e) {
