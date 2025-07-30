@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Azure Blob Storage Document Manager</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        h1, h2 {
+            color: #333;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="file"], input[type="text"] {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #0078d4;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #106ebe;
+        }
+        .result {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 4px;
+            white-space: pre-wrap;
+            font-family: monospace;
+        }
+        .success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .file-list {
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .file-item {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .file-info {
+            flex-grow: 1;
+        }
+        .file-actions {
+            margin-left: 10px;
+        }
+        .file-actions button {
+            margin-left: 5px;
+            padding: 5px 10px;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Azure Blob Storage Document Manager</h1>
+    
+    <!-- Upload Section -->
+    <div class="container">
+        <h2>Upload Document</h2>
+        <form id="uploadForm" enctype="multipart/form-data">
+            <div class="form-group">
+                <label for="fileInput">Select File:</label>
+                <input type="file" id="fileInput" name="file" required>
+            </div>
+            <button type="submit">Upload</button>
+        </form>
+        <div id="uploadResult" class="result" style="display: none;"></div>
+    </div>
+    
+    <!-- Retrieve Section -->
+    <div class="container">
+        <h2>Retrieve Document</h2>
+        <form id="retrieveForm">
+            <div class="form-group">
+                <label for="retrieveFilename">Filename:</label>
+                <input type="text" id="retrieveFilename" placeholder="e.g., document.pdf" required>
+            </div>
+            <button type="submit">Get Info</button>
+            <button type="button" onclick="downloadFile()">Download</button>
+        </form>
+        <div id="retrieveResult" class="result" style="display: none;"></div>
+    </div>
+    
+    <!-- Delete Section -->
+    <div class="container">
+        <h2>Delete Document</h2>
+        <form id="deleteForm">
+            <div class="form-group">
+                <label for="deleteFilename">Filename:</label>
+                <input type="text" id="deleteFilename" placeholder="e.g., document.pdf" required>
+            </div>
+            <button type="submit">Delete</button>
+        </form>
+        <div id="deleteResult" class="result" style="display: none;"></div>
+    </div>
+    
+    <!-- List Documents Section -->
+    <div class="container">
+        <h2>Documents in Storage</h2>
+        <button onclick="listDocuments()">Refresh List</button>
+        <div id="documentList" class="file-list" style="margin-top: 10px;">
+            <div style="padding: 20px; text-align: center; color: #666;">
+                Click "Refresh List" to load documents
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Upload form handler
+        document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData();
+            const fileInput = document.getElementById('fileInput');
+            formData.append('file', fileInput.files[0]);
+            
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                showResult('uploadResult', result, response.ok);
+                
+                if (response.ok) {
+                    fileInput.value = '';
+                    listDocuments(); // Refresh list
+                }
+            } catch (error) {
+                showResult('uploadResult', {success: false, message: error.message}, false);
+            }
+        });
+        
+        // Retrieve form handler
+        document.getElementById('retrieveForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const filename = document.getElementById('retrieveFilename').value;
+            
+            try {
+                const response = await fetch(`/retrieve?filename=${encodeURIComponent(filename)}`);
+                const result = await response.json();
+                showResult('retrieveResult', result, response.ok);
+            } catch (error) {
+                showResult('retrieveResult', {success: false, message: error.message}, false);
+            }
+        });
+        
+        // Delete form handler
+        document.getElementById('deleteForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const filename = document.getElementById('deleteFilename').value;
+            
+            if (!confirm(`Are you sure you want to delete "${filename}"?`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/delete?filename=${encodeURIComponent(filename)}`, {
+                    method: 'DELETE'
+                });
+                const result = await response.json();
+                showResult('deleteResult', result, response.ok);
+                
+                if (response.ok) {
+                    document.getElementById('deleteFilename').value = '';
+                    listDocuments(); // Refresh list
+                }
+            } catch (error) {
+                showResult('deleteResult', {success: false, message: error.message}, false);
+            }
+        });
+        
+        // Download function
+        function downloadFile() {
+            const filename = document.getElementById('retrieveFilename').value;
+            if (!filename) {
+                alert('Please enter a filename');
+                return;
+            }
+            
+            window.open(`/download?filename=${encodeURIComponent(filename)}`, '_blank');
+        }
+        
+        // List documents function
+        async function listDocuments() {
+            try {
+                const response = await fetch('/list');
+                const result = await response.json();
+                
+                const listContainer = document.getElementById('documentList');
+                
+                if (result.success && result.documents) {
+                    if (result.documents.length === 0) {
+                        listContainer.innerHTML = '<div style="padding: 20px; text-align: center; color: #666;">No documents found</div>';
+                    } else {
+                        listContainer.innerHTML = result.documents.map(doc => `
+                            <div class="file-item">
+                                <div class="file-info">
+                                    <strong>${doc.name}</strong><br>
+                                    <small>Size: ${formatFileSize(doc.size)} | Type: ${doc.contentType} | Modified: ${new Date(doc.lastModified).toLocaleString()}</small>
+                                </div>
+                                <div class="file-actions">
+                                    <button onclick="downloadFileFromList('${doc.name}')">Download</button>
+                                    <button onclick="deleteFileFromList('${doc.name}')" style="background-color: #dc3545;">Delete</button>
+                                </div>
+                            </div>
+                        `).join('');
+                    }
+                } else {
+                    listContainer.innerHTML = `<div style="padding: 20px; text-align: center; color: #dc3545;">Error: ${result.message}</div>`;
+                }
+            } catch (error) {
+                document.getElementById('documentList').innerHTML = `<div style="padding: 20px; text-align: center; color: #dc3545;">Error: ${error.message}</div>`;
+            }
+        }
+        
+        // Helper functions
+        function showResult(elementId, result, isSuccess) {
+            const element = document.getElementById(elementId);
+            element.style.display = 'block';
+            element.className = `result ${isSuccess ? 'success' : 'error'}`;
+            element.textContent = JSON.stringify(result, null, 2);
+        }
+        
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+        
+        function downloadFileFromList(filename) {
+            window.open(`/download?filename=${encodeURIComponent(filename)}`, '_blank');
+        }
+        
+        async function deleteFileFromList(filename) {
+            if (!confirm(`Are you sure you want to delete "${filename}"?`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/delete?filename=${encodeURIComponent(filename)}`, {
+                    method: 'DELETE'
+                });
+                const result = await response.json();
+                
+                if (result.success) {
+                    listDocuments(); // Refresh list
+                } else {
+                    alert('Delete failed: ' + result.message);
+                }
+            } catch (error) {
+                alert('Delete failed: ' + error.message);
+            }
+        }
+        
+        // Load documents on page load
+        window.addEventListener('load', listDocuments);
+    </script>
+</body>
+</html>
