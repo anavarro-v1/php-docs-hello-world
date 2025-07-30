@@ -4,7 +4,6 @@
     "type": "project",
     "require": {
         "php": ">=7.4",
-        "microsoft/azure-storage-blob": "^1.5",
         "guzzlehttp/guzzle": "^7.0"
     },
     "autoload": {

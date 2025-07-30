@@ -44,4 +44,30 @@ class AzureStorageConfig
         
         return $matches[1];
     }
+    
+    /**
+     * Get Azure Storage account key from connection string
+     */
+    public static function getAccountKey(): string
+    {
+        $connectionString = self::getConnectionString();
+        preg_match('/AccountKey=([^;]+)/', $connectionString, $matches);
+        
+        if (empty($matches[1])) {
+            throw new \Exception('Could not extract account key from connection string');
+        }
+        
+        return $matches[1];
+    }
+    
+    /**
+     * Get Azure Storage endpoint suffix from connection string
+     */
+    public static function getEndpointSuffix(): string
+    {
+        $connectionString = self::getConnectionString();
+        preg_match('/EndpointSuffix=([^;]+)/', $connectionString, $matches);
+        
+        return $matches[1] ?? 'core.windows.net';
+    }
 }
