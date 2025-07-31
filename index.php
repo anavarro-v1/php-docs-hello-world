@@ -51,32 +51,9 @@ try {
     
     switch ($path) {
         case '/':
-            // Welcome message and API documentation
-            echo json_encode([
-                'message' => 'Welcome to PHP Hello World with Azure Storage Blob API',
-                'version' => '1.0.0',
-                'endpoints' => [
-                    'GET /' => 'This help message',
-                    'POST /upload' => 'Upload a document (multipart/form-data with "file" field)',
-                    'POST /upload-raw' => 'Upload raw document content (query param: filename)',
-                    'GET /retrieve' => 'Retrieve document metadata (query param: filename)',
-                    'GET /download' => 'Download document content (query param: filename)',
-                    'DELETE /delete' => 'Delete a document (query param: filename)',
-                    'GET /list' => 'List all documents in the container'
-                ],
-                'example_usage' => [
-                    'upload' => 'curl -X POST -F "file=@document.pdf" http://localhost/upload',
-                    'upload_raw' => 'curl -X POST --data-binary @document.pdf "http://localhost/upload-raw?filename=document.pdf"',
-                    'retrieve' => 'curl "http://localhost/retrieve?filename=document.pdf"',
-                    'download' => 'curl "http://localhost/download?filename=document.pdf" -o downloaded_file.pdf',
-                    'delete' => 'curl -X DELETE "http://localhost/delete?filename=document.pdf"',
-                    'list' => 'curl "http://localhost/list"'
-                ],
-                'environment_variables' => [
-                    'AZURE_STORAGE_CONNECTION_STRING' => 'Required - Your Azure Storage connection string',
-                    'AZURE_STORAGE_CONTAINER' => 'Optional - Container name (default: documents)'
-                ]
-            ], JSON_PRETTY_PRINT);
+            // Display HTML interface with file listing
+            header('Content-Type: text/html');
+            displayFileManagerInterface($controller);
             break;
             
         case '/upload':
@@ -138,4 +115,554 @@ try {
         'message' => 'Internal server error: ' . $e->getMessage(),
         'error_code' => 500
     ], JSON_PRETTY_PRINT);
+}
+
+/**
+ * Display the file manager interface
+ */
+function displayFileManagerInterface($controller) {
+    // Get list of files
+    $fileListResult = $controller->list();
+    $files = $fileListResult['success'] ? $fileListResult['documents'] : [];
+    
+    echo '<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Azure Blob Storage File Manager</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #0078d4 0%, #106ebe 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            font-weight: 300;
+        }
+        
+        .header p {
+            opacity: 0.9;
+            font-size: 1.1rem;
+        }
+        
+        .upload-section {
+            padding: 30px;
+            border-bottom: 1px solid #eee;
+            background: #f8f9fa;
+        }
+        
+        .upload-form {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        
+        .file-input-wrapper {
+            position: relative;
+            flex: 1;
+        }
+        
+        .file-input {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px dashed #ddd;
+            border-radius: 8px;
+            background: white;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .file-input:hover {
+            border-color: #0078d4;
+            background: #f0f8ff;
+        }
+        
+        .upload-btn {
+            background: #0078d4;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.3s ease;
+        }
+        
+        .upload-btn:hover {
+            background: #106ebe;
+        }
+        
+        .files-section {
+            padding: 30px;
+        }
+        
+        .files-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .files-count {
+            color: #666;
+            font-size: 1.1rem;
+        }
+        
+        .refresh-btn {
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.3s ease;
+        }
+        
+        .refresh-btn:hover {
+            background: #218838;
+        }
+        
+        .files-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        
+        .file-card {
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 10px;
+            padding: 20px;
+            transition: all 0.3s ease;
+            position: relative;
+            cursor: pointer;
+        }
+        
+        .file-card:hover {
+            box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+            transform: translateY(-2px);
+            border-color: #0078d4;
+        }
+        
+        .file-icon {
+            width: 48px;
+            height: 48px;
+            margin-bottom: 15px;
+            background: #f0f8ff;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            overflow: hidden;
+        }
+        
+        .file-icon.image-preview {
+            background: transparent;
+            border: 2px solid #e0e0e0;
+        }
+        
+        .file-icon.image-preview img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 6px;
+        }
+        
+        .file-name {
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #333;
+            word-break: break-word;
+        }
+        
+        .file-meta {
+            color: #666;
+            font-size: 0.9rem;
+            margin-bottom: 15px;
+        }
+        
+        .file-actions {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .action-btn {
+            flex: 1;
+            padding: 8px 12px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+        
+        .download-btn {
+            background: #0078d4;
+            color: white;
+        }
+        
+        .download-btn:hover {
+            background: #106ebe;
+        }
+        
+        .delete-btn {
+            background: #dc3545;
+            color: white;
+        }
+        
+        .delete-btn:hover {
+            background: #c82333;
+        }
+        
+        .tooltip {
+            position: absolute;
+            top: -10px;
+            left: 50%;
+            transform: translateX(-50%) translateY(-100%);
+            background: #333;
+            color: white;
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-size: 12px;
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+            z-index: 1000;
+            max-width: 300px;
+            text-align: left;
+            line-height: 1.4;
+        }
+        
+        .tooltip.image-tooltip {
+            max-width: 400px;
+            white-space: normal;
+        }
+        
+        .tooltip.image-tooltip img {
+            width: 200px;
+            height: auto;
+            border-radius: 4px;
+            margin-top: 8px;
+            display: block;
+        }
+        
+        .tooltip::after {
+            content: "";
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            border: 5px solid transparent;
+            border-top-color: #333;
+        }
+        
+        .file-card:hover .tooltip {
+            opacity: 1;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #666;
+        }
+        
+        .empty-state-icon {
+            font-size: 4rem;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+        
+        .message {
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 8px;
+            text-align: center;
+        }
+        
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        @media (max-width: 768px) {
+            .files-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .upload-form {
+                flex-direction: column;
+            }
+            
+            .file-input-wrapper {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📁 Azure Blob Storage</h1>
+            <p>File Manager & Document Storage</p>
+        </div>
+        
+        <div class="upload-section">
+            <form class="upload-form" id="uploadForm" enctype="multipart/form-data">
+                <div class="file-input-wrapper">
+                    <input type="file" class="file-input" id="fileInput" name="file" required>
+                </div>
+                <button type="submit" class="upload-btn">📤 Upload</button>
+            </form>
+            <div id="uploadMessage"></div>
+        </div>
+        
+        <div class="files-section">
+            <div class="files-header">
+                <h2 class="files-count">📂 ' . count($files) . ' file' . (count($files) !== 1 ? 's' : '') . ' stored</h2>
+                <button class="refresh-btn" onclick="location.reload()">🔄 Refresh</button>
+            </div>';
+    
+    if (empty($files)) {
+        echo '<div class="empty-state">
+                <div class="empty-state-icon">📭</div>
+                <h3>No files uploaded yet</h3>
+                <p>Upload your first file using the form above</p>
+              </div>';
+    } else {
+        echo '<div class="files-grid">';
+        
+        foreach ($files as $file) {
+            $fileExt = pathinfo($file['name'], PATHINFO_EXTENSION);
+            $isImage = isImageFile($fileExt);
+            $icon = $isImage ? '' : getFileIcon($fileExt);
+            $size = formatFileSize($file['size']);
+            $lastModified = date('M j, Y g:i A', strtotime($file['lastModified']));
+            
+            echo '<div class="file-card">
+                    <div class="tooltip' . ($isImage ? ' image-tooltip' : '') . '">
+                        <strong>' . htmlspecialchars($file['name']) . '</strong><br>
+                        Size: ' . $size . '<br>
+                        Type: ' . htmlspecialchars($file['contentType']) . '<br>
+                        Modified: ' . $lastModified . '<br>
+                        ETag: ' . htmlspecialchars($file['etag']);
+            
+            if ($isImage) {
+                echo '<br><img src="' . htmlspecialchars($file['url']) . '" alt="Preview" />';
+            }
+            
+            echo '</div>';
+            
+            if ($isImage) {
+                echo '<div class="file-icon image-preview">
+                        <img src="' . htmlspecialchars($file['url']) . '" alt="' . htmlspecialchars($file['name']) . '" />
+                      </div>';
+            } else {
+                echo '<div class="file-icon">' . $icon . '</div>';
+            }
+            
+            echo '<div class="file-name">' . htmlspecialchars($file['name']) . '</div>
+                    <div class="file-meta">
+                        ' . $size . ' • ' . $lastModified . '
+                    </div>
+                    
+                    <div class="file-actions">
+                        <button class="action-btn download-btn" onclick="downloadFile(\'' . htmlspecialchars($file['name'], ENT_QUOTES) . '\')">
+                            ⬇️ Download
+                        </button>
+                        <button class="action-btn delete-btn" onclick="deleteFile(\'' . htmlspecialchars($file['name'], ENT_QUOTES) . '\')">
+                            🗑️ Delete
+                        </button>
+                    </div>
+                  </div>';
+        }
+        
+        echo '</div>';
+    }
+    
+    echo '    </div>
+    </div>
+    
+    <script>
+        // Upload form handler
+        document.getElementById("uploadForm").addEventListener("submit", async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData();
+            const fileInput = document.getElementById("fileInput");
+            const messageDiv = document.getElementById("uploadMessage");
+            
+            if (!fileInput.files[0]) {
+                showMessage("Please select a file to upload", "error");
+                return;
+            }
+            
+            formData.append("file", fileInput.files[0]);
+            
+            try {
+                showMessage("Uploading...", "info");
+                
+                const response = await fetch("/upload", {
+                    method: "POST",
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showMessage("File uploaded successfully!", "success");
+                    fileInput.value = "";
+                    setTimeout(() => location.reload(), 1500);
+                } else {
+                    showMessage("Upload failed: " + result.message, "error");
+                }
+            } catch (error) {
+                showMessage("Upload failed: " + error.message, "error");
+            }
+        });
+        
+        // Download file
+        function downloadFile(filename) {
+            window.open("/download?filename=" + encodeURIComponent(filename), "_blank");
+        }
+        
+        // Delete file
+        async function deleteFile(filename) {
+            if (!confirm("Are you sure you want to delete \\"" + filename + "\\"?")) {
+                return;
+            }
+            
+            try {
+                const response = await fetch("/delete?filename=" + encodeURIComponent(filename), {
+                    method: "DELETE"
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showMessage("File deleted successfully!", "success");
+                    setTimeout(() => location.reload(), 1000);
+                } else {
+                    showMessage("Delete failed: " + result.message, "error");
+                }
+            } catch (error) {
+                showMessage("Delete failed: " + error.message, "error");
+            }
+        }
+        
+        // Show message
+        function showMessage(message, type) {
+            const messageDiv = document.getElementById("uploadMessage");
+            messageDiv.className = "message " + type;
+            messageDiv.textContent = message;
+            messageDiv.style.display = "block";
+            
+            if (type === "success" || type === "info") {
+                setTimeout(() => {
+                    messageDiv.style.display = "none";
+                }, 3000);
+            }
+        }
+    </script>
+</body>
+</html>';
+}
+
+/**
+ * Check if file is an image based on extension
+ */
+function isImageFile($extension) {
+    $extension = strtolower($extension);
+    $imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'];
+    return in_array($extension, $imageExtensions);
+}
+
+/**
+ * Get file icon based on extension
+ */
+function getFileIcon($extension) {
+    $extension = strtolower($extension);
+    
+    $icons = [
+        'pdf' => '📄',
+        'doc' => '📝',
+        'docx' => '📝',
+        'xls' => '📊',
+        'xlsx' => '📊',
+        'ppt' => '📽️',
+        'pptx' => '📽️',
+        'txt' => '📄',
+        'jpg' => '🖼️',
+        'jpeg' => '🖼️',
+        'png' => '🖼️',
+        'gif' => '🖼️',
+        'mp4' => '🎬',
+        'avi' => '🎬',
+        'mov' => '🎬',
+        'mp3' => '🎵',
+        'wav' => '🎵',
+        'zip' => '📦',
+        'rar' => '📦',
+        'html' => '🌐',
+        'css' => '🎨',
+        'js' => '⚡',
+        'php' => '🐘',
+        'py' => '🐍',
+        'json' => '📋',
+        'xml' => '📋',
+    ];
+    
+    return $icons[$extension] ?? '📄';
+}
+
+/**
+ * Format file size in human readable format
+ */
+function formatFileSize($bytes) {
+    if ($bytes == 0) return '0 Bytes';
+    
+    $k = 1024;
+    $sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    $i = floor(log($bytes) / log($k));
+    
+    return round($bytes / pow($k, $i), 2) . ' ' . $sizes[$i];
 }
