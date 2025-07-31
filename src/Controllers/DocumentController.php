@@ -37,10 +37,17 @@ class DocumentController
             $content = file_get_contents($file['tmp_name']);
             $contentType = $file['type'] ?: 'application/octet-stream';
             
-            // Sanitize filename
-            $fileName = $this->sanitizeFileName($fileName);
+            // Handle optional path parameter
+            $path = $_POST['path'] ?? '';
+            $path = $this->sanitizePath($path);
             
-            return $this->blobClient->uploadDocument($fileName, $content, $contentType);
+            // Combine path with filename
+            $fullFileName = $path ? $path . '/' . $fileName : $fileName;
+            
+            // Sanitize filename
+            $fullFileName = $this->sanitizeFileName($fullFileName);
+            
+            return $this->blobClient->uploadDocument($fullFileName, $content, $contentType);
             
         } catch (\Exception $e) {
             return $this->errorResponse('Upload failed: ' . $e->getMessage(), 500);
@@ -58,6 +65,7 @@ class DocumentController
             }
             
             $fileName = $_GET['filename'] ?? 'uploaded_file_' . time();
+            $path = $_GET['path'] ?? '';
             $contentType = $_SERVER['CONTENT_TYPE'] ?? 'application/octet-stream';
             
             $content = file_get_contents('php://input');
@@ -66,7 +74,12 @@ class DocumentController
                 return $this->errorResponse('No content provided', 400);
             }
             
-            return $this->blobClient->uploadDocument($fileName, $content, $contentType);
+            // Handle path
+            $path = $this->sanitizePath($path);
+            $fullFileName = $path ? $path . '/' . $fileName : $fileName;
+            $fullFileName = $this->sanitizeFileName($fullFileName);
+            
+            return $this->blobClient->uploadDocument($fullFileName, $content, $contentType);
             
         } catch (\Exception $e) {
             return $this->errorResponse('Upload failed: ' . $e->getMessage(), 500);
@@ -182,18 +195,78 @@ class DocumentController
      */
     private function sanitizeFileName(string $fileName): string
     {
-        // Remove directory traversal attempts
-        $fileName = basename($fileName);
-        
-        // Remove or replace invalid characters
-        $fileName = preg_replace('/[^a-zA-Z0-9\-_\.]/', '_', $fileName);
+        // For paths with slashes, handle each segment separately
+        if (strpos($fileName, '/') !== false) {
+            $segments = explode('/', $fileName);
+            $sanitizedSegments = [];
+            
+            foreach ($segments as $segment) {
+                if (empty($segment)) continue;
+                
+                // Remove directory traversal attempts
+                $segment = basename($segment);
+                
+                // Remove or replace invalid characters
+                $segment = preg_replace('/[^a-zA-Z0-9\-_\.]/', '_', $segment);
+                
+                if (!empty($segment)) {
+                    $sanitizedSegments[] = $segment;
+                }
+            }
+            
+            $fileName = implode('/', $sanitizedSegments);
+        } else {
+            // Remove directory traversal attempts
+            $fileName = basename($fileName);
+            
+            // Remove or replace invalid characters
+            $fileName = preg_replace('/[^a-zA-Z0-9\-_\.]/', '_', $fileName);
+        }
         
         // Ensure filename is not empty and has reasonable length
-        if (empty($fileName) || strlen($fileName) > 255) {
+        if (empty($fileName) || strlen($fileName) > 1024) {
             $fileName = 'file_' . time() . '.bin';
         }
         
         return $fileName;
+    }
+    
+    /**
+     * Sanitize path to prevent path traversal and invalid characters
+     */
+    private function sanitizePath(string $path): string
+    {
+        if (empty($path)) {
+            return '';
+        }
+        
+        // Remove leading and trailing slashes
+        $path = trim($path, '/');
+        
+        if (empty($path)) {
+            return '';
+        }
+        
+        // Split path into segments
+        $segments = explode('/', $path);
+        $sanitizedSegments = [];
+        
+        foreach ($segments as $segment) {
+            // Skip empty segments and directory traversal attempts
+            if (empty($segment) || $segment === '.' || $segment === '..') {
+                continue;
+            }
+            
+            // Remove or replace invalid characters (allow letters, numbers, hyphens, underscores)
+            $segment = preg_replace('/[^a-zA-Z0-9\-_]/', '_', $segment);
+            
+            // Ensure segment is not empty after sanitization
+            if (!empty($segment) && strlen($segment) <= 255) {
+                $sanitizedSegments[] = $segment;
+            }
+        }
+        
+        return implode('/', $sanitizedSegments);
     }
     
     /**

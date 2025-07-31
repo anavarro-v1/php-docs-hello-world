@@ -182,16 +182,21 @@ function displayFileManagerInterface($controller) {
             display: flex;
             align-items: center;
             gap: 15px;
-            max-width: 600px;
+            max-width: 800px;
             margin: 0 auto;
         }
         
         .file-input-wrapper {
             position: relative;
+            flex: 2;
+        }
+        
+        .path-input-wrapper {
+            position: relative;
             flex: 1;
         }
         
-        .file-input {
+        .file-input, .path-input {
             width: 100%;
             padding: 12px 15px;
             border: 2px dashed #ddd;
@@ -201,7 +206,18 @@ function displayFileManagerInterface($controller) {
             transition: all 0.3s ease;
         }
         
-        .file-input:hover {
+        .path-input {
+            border-style: solid;
+            cursor: text;
+        }
+        
+        .file-input:hover, .path-input:hover {
+            border-color: #0078d4;
+            background: #f0f8ff;
+        }
+        
+        .path-input:focus {
+            outline: none;
             border-color: #0078d4;
             background: #f0f8ff;
         }
@@ -225,11 +241,76 @@ function displayFileManagerInterface($controller) {
             padding: 30px;
         }
         
+        .folder-section {
+            margin-bottom: 30px;
+        }
+        
+        .folder-title {
+            color: #0078d4;
+            font-size: 1.2rem;
+            margin-bottom: 15px;
+            padding: 10px 0;
+            border-bottom: 2px solid #e0e0e0;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: all 0.3s ease;
+        }
+        
+        .folder-title:hover {
+            background-color: #f0f8ff;
+            padding-left: 10px;
+            padding-right: 10px;
+            border-radius: 6px;
+        }
+        
+        .folder-toggle {
+            font-size: 0.8rem;
+            color: #666;
+            transition: transform 0.3s ease;
+        }
+        
+        .folder-content {
+            max-height: 2000px;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out;
+        }
+        
+        .folder-content.collapsed {
+            max-height: 0;
+        }
+        
+        .folder-toggle.collapsed {
+            transform: rotate(-90deg);
+        }
+        
         .files-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
             margin-bottom: 20px;
+        }
+        
+        .folder-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        .folder-control-btn {
+            background: #6c757d;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: background 0.3s ease;
+        }
+        
+        .folder-control-btn:hover {
+            background: #5a6268;
         }
         
         .files-count {
@@ -433,8 +514,23 @@ function displayFileManagerInterface($controller) {
                 flex-direction: column;
             }
             
-            .file-input-wrapper {
+            .file-input-wrapper, .path-input-wrapper {
                 width: 100%;
+            }
+            
+            .files-header {
+                flex-direction: column;
+                gap: 15px;
+                align-items: stretch;
+            }
+            
+            .folder-controls {
+                justify-content: center;
+                flex-wrap: wrap;
+            }
+            
+            .folder-title {
+                font-size: 1rem;
             }
         }
     </style>
@@ -451,6 +547,9 @@ function displayFileManagerInterface($controller) {
                 <div class="file-input-wrapper">
                     <input type="file" class="file-input" id="fileInput" name="file" required>
                 </div>
+                <div class="path-input-wrapper">
+                    <input type="text" class="path-input" id="pathInput" name="path" placeholder="Optional: folder/subfolder/" title="Specify a folder path (e.g., images/, documents/pdf/)">
+                </div>
                 <button type="submit" class="upload-btn">📤 Upload</button>
             </form>
             <div id="uploadMessage"></div>
@@ -459,7 +558,11 @@ function displayFileManagerInterface($controller) {
         <div class="files-section">
             <div class="files-header">
                 <h2 class="files-count">📂 ' . count($files) . ' file' . (count($files) !== 1 ? 's' : '') . ' stored</h2>
-                <button class="refresh-btn" onclick="location.reload()">🔄 Refresh</button>
+                <div class="folder-controls">
+                    <button class="folder-control-btn" onclick="toggleAllFolders(false)" title="Collapse all folders">📁 Collapse All</button>
+                    <button class="folder-control-btn" onclick="toggleAllFolders(true)" title="Expand all folders">📂 Expand All</button>
+                    <button class="refresh-btn" onclick="location.reload()">🔄 Refresh</button>
+                </div>
             </div>';
     
     if (empty($files)) {
@@ -469,54 +572,90 @@ function displayFileManagerInterface($controller) {
                 <p>Upload your first file using the form above</p>
               </div>';
     } else {
-        echo '<div class="files-grid">';
-        
+        // Group files by folder
+        $filesByFolder = [];
         foreach ($files as $file) {
-            $fileExt = pathinfo($file['name'], PATHINFO_EXTENSION);
-            $isImage = isImageFile($fileExt);
-            $icon = $isImage ? '' : getFileIcon($fileExt);
-            $size = formatFileSize($file['size']);
-            $lastModified = date('M j, Y g:i A', strtotime($file['lastModified']));
+            $pathParts = explode('/', $file['name']);
+            if (count($pathParts) > 1) {
+                $folder = implode('/', array_slice($pathParts, 0, -1));
+                $file['displayName'] = end($pathParts);
+                $file['folder'] = $folder;
+            } else {
+                $folder = 'Root';
+                $file['displayName'] = $file['name'];
+                $file['folder'] = '';
+            }
+            $filesByFolder[$folder][] = $file;
+        }
+        
+        // Sort folders
+        ksort($filesByFolder);
+        
+        foreach ($filesByFolder as $folderName => $folderFiles) {
+            $folderId = 'folder-' . md5($folderName);
             
-            echo '<div class="file-card">
-                    <div class="tooltip' . ($isImage ? ' image-tooltip' : '') . '">
-                        <strong>' . htmlspecialchars($file['name']) . '</strong><br>
-                        Size: ' . $size . '<br>
-                        Type: ' . htmlspecialchars($file['contentType']) . '<br>
-                        Modified: ' . $lastModified . '<br>
-                        ETag: ' . htmlspecialchars($file['etag']);
+            if ($folderName !== 'Root') {
+                echo '<div class="folder-section">
+                        <div class="folder-title" onclick="toggleFolder(\'' . $folderId . '\')">
+                            <span>📁 ' . htmlspecialchars($folderName) . ' (' . count($folderFiles) . ' files)</span>
+                            <span class="folder-toggle" id="toggle-' . $folderId . '">▼</span>
+                        </div>
+                        <div class="folder-content" id="' . $folderId . '">';
+            }
             
-            if ($isImage) {
-                echo '<br><img src="' . htmlspecialchars($file['url']) . '" alt="Preview" />';
+            echo '<div class="files-grid">';
+            
+            foreach ($folderFiles as $file) {
+                $fileExt = pathinfo($file['displayName'], PATHINFO_EXTENSION);
+                $isImage = isImageFile($fileExt);
+                $icon = $isImage ? '' : getFileIcon($fileExt);
+                $size = formatFileSize($file['size']);
+                $lastModified = date('M j, Y g:i A', strtotime($file['lastModified']));
+                
+                echo '<div class="file-card">
+                        <div class="tooltip' . ($isImage ? ' image-tooltip' : '') . '">
+                            <strong>' . htmlspecialchars($file['name']) . '</strong><br>
+                            Size: ' . $size . '<br>
+                            Type: ' . htmlspecialchars($file['contentType']) . '<br>
+                            Modified: ' . $lastModified . '<br>
+                            ETag: ' . htmlspecialchars($file['etag']);
+                
+                if ($isImage) {
+                    echo '<br><img src="' . htmlspecialchars($file['url']) . '" alt="Preview" />';
+                }
+                
+                echo '</div>';
+                
+                if ($isImage) {
+                    echo '<div class="file-icon image-preview">
+                            <img src="' . htmlspecialchars($file['url']) . '" alt="' . htmlspecialchars($file['displayName']) . '" />
+                          </div>';
+                } else {
+                    echo '<div class="file-icon">' . $icon . '</div>';
+                }
+                
+                echo '<div class="file-name">' . htmlspecialchars($file['displayName']) . '</div>
+                        <div class="file-meta">
+                            ' . $size . ' • ' . $lastModified . '
+                        </div>
+                        
+                        <div class="file-actions">
+                            <button class="action-btn download-btn" onclick="downloadFile(\'' . htmlspecialchars($file['name'], ENT_QUOTES) . '\')">
+                                ⬇️ Download
+                            </button>
+                            <button class="action-btn delete-btn" onclick="deleteFile(\'' . htmlspecialchars($file['name'], ENT_QUOTES) . '\')">
+                                🗑️ Delete
+                            </button>
+                        </div>
+                      </div>';
             }
             
             echo '</div>';
             
-            if ($isImage) {
-                echo '<div class="file-icon image-preview">
-                        <img src="' . htmlspecialchars($file['url']) . '" alt="' . htmlspecialchars($file['name']) . '" />
-                      </div>';
-            } else {
-                echo '<div class="file-icon">' . $icon . '</div>';
+            if ($folderName !== 'Root') {
+                echo '</div></div>';
             }
-            
-            echo '<div class="file-name">' . htmlspecialchars($file['name']) . '</div>
-                    <div class="file-meta">
-                        ' . $size . ' • ' . $lastModified . '
-                    </div>
-                    
-                    <div class="file-actions">
-                        <button class="action-btn download-btn" onclick="downloadFile(\'' . htmlspecialchars($file['name'], ENT_QUOTES) . '\')">
-                            ⬇️ Download
-                        </button>
-                        <button class="action-btn delete-btn" onclick="deleteFile(\'' . htmlspecialchars($file['name'], ENT_QUOTES) . '\')">
-                            🗑️ Delete
-                        </button>
-                    </div>
-                  </div>';
         }
-        
-        echo '</div>';
     }
     
     echo '    </div>
@@ -529,6 +668,7 @@ function displayFileManagerInterface($controller) {
             
             const formData = new FormData();
             const fileInput = document.getElementById("fileInput");
+            const pathInput = document.getElementById("pathInput");
             const messageDiv = document.getElementById("uploadMessage");
             
             if (!fileInput.files[0]) {
@@ -537,6 +677,12 @@ function displayFileManagerInterface($controller) {
             }
             
             formData.append("file", fileInput.files[0]);
+            
+            // Add path if specified
+            const path = pathInput.value.trim();
+            if (path) {
+                formData.append("path", path);
+            }
             
             try {
                 showMessage("Uploading...", "info");
@@ -549,8 +695,9 @@ function displayFileManagerInterface($controller) {
                 const result = await response.json();
                 
                 if (result.success) {
-                    showMessage("File uploaded successfully!", "success");
+                    showMessage("File uploaded successfully!" + (path ? " to " + path : ""), "success");
                     fileInput.value = "";
+                    pathInput.value = "";
                     setTimeout(() => location.reload(), 1500);
                 } else {
                     showMessage("Upload failed: " + result.message, "error");
@@ -602,6 +749,51 @@ function displayFileManagerInterface($controller) {
                 }, 3000);
             }
         }
+        
+        // Toggle folder visibility
+        function toggleFolder(folderId) {
+            const folderContent = document.getElementById(folderId);
+            const toggleIcon = document.getElementById("toggle-" + folderId);
+            
+            if (folderContent.classList.contains("collapsed")) {
+                folderContent.classList.remove("collapsed");
+                toggleIcon.classList.remove("collapsed");
+                toggleIcon.textContent = "▼";
+            } else {
+                folderContent.classList.add("collapsed");
+                toggleIcon.classList.add("collapsed");
+                toggleIcon.textContent = "▶";
+            }
+        }
+        
+        // Toggle all folders
+        function toggleAllFolders(expand) {
+            const folderContents = document.querySelectorAll(".folder-content");
+            const toggleIcons = document.querySelectorAll(".folder-toggle");
+            
+            folderContents.forEach(function(folder) {
+                if (expand) {
+                    folder.classList.remove("collapsed");
+                } else {
+                    folder.classList.add("collapsed");
+                }
+            });
+            
+            toggleIcons.forEach(function(icon) {
+                if (expand) {
+                    icon.classList.remove("collapsed");
+                    icon.textContent = "▼";
+                } else {
+                    icon.classList.add("collapsed");
+                    icon.textContent = "▶";
+                }
+            });
+        }
+        
+        // Initialize folder states (expand all by default)
+        document.addEventListener("DOMContentLoaded", function() {
+            // You can add code here to remember folder states or set default collapsed folders
+        });
     </script>
 </body>
 </html>';
