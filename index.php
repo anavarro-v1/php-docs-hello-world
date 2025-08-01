@@ -97,6 +97,12 @@ try {
             echo json_encode($result, JSON_PRETTY_PRINT);
             break;
             
+        case '/assets/js/file-manager.js':
+            // Serve the JavaScript file
+            header('Content-Type: application/javascript');
+            readfile(__DIR__ . '/assets/js/file-manager.js');
+            break;
+            
         default:
             http_response_code(404);
             echo json_encode([
@@ -398,6 +404,38 @@ function displayFileManagerInterface($controller) {
             gap: 10px;
         }
         
+        .image-controls {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 10px;
+            justify-content: center;
+        }
+        
+        .image-control-btn {
+            background: #f8f9fa;
+            color: #495057;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 4px 8px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s ease;
+            min-width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .image-control-btn:hover {
+            background: #e9ecef;
+            border-color: #adb5bd;
+        }
+        
+        .image-control-btn:active {
+            background: #dee2e6;
+        }
+        
         .action-btn {
             flex: 1;
             padding: 8px 12px;
@@ -503,6 +541,17 @@ function displayFileManagerInterface($controller) {
             background: #f8d7da;
             color: #721c24;
             border: 1px solid #f5c6cb;
+        }
+        
+        .message.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        
+        .processing {
+            opacity: 0.6;
+            pointer-events: none;
         }
         
         @media (max-width: 768px) {
@@ -637,9 +686,18 @@ function displayFileManagerInterface($controller) {
                 echo '<div class="file-name">' . htmlspecialchars($file['displayName']) . '</div>
                         <div class="file-meta">
                             ' . $size . ' • ' . $lastModified . '
-                        </div>
-                        
-                        <div class="file-actions">
+                        </div>';
+                
+                if ($isImage) {
+                    echo '<div class="image-controls">
+                            <button class="image-control-btn" onclick="rotateImage(\'' . htmlspecialchars($file['name'], ENT_QUOTES) . '\', 90)" title="Rotate 90° clockwise">↻</button>
+                            <button class="image-control-btn" onclick="rotateImage(\'' . htmlspecialchars($file['name'], ENT_QUOTES) . '\', -90)" title="Rotate 90° counter-clockwise">↺</button>
+                            <button class="image-control-btn" onclick="flipImage(\'' . htmlspecialchars($file['name'], ENT_QUOTES) . '\', \'horizontal\')" title="Flip horizontally">⇄</button>
+                            <button class="image-control-btn" onclick="flipImage(\'' . htmlspecialchars($file['name'], ENT_QUOTES) . '\', \'vertical\')" title="Flip vertically">⇅</button>
+                          </div>';
+                }
+                
+                echo '<div class="file-actions">
                             <button class="action-btn download-btn" onclick="downloadFile(\'' . htmlspecialchars($file['name'], ENT_QUOTES) . '\')">
                                 ⬇️ Download
                             </button>
@@ -661,140 +719,7 @@ function displayFileManagerInterface($controller) {
     echo '    </div>
     </div>
     
-    <script>
-        // Upload form handler
-        document.getElementById("uploadForm").addEventListener("submit", async function(e) {
-            e.preventDefault();
-            
-            const formData = new FormData();
-            const fileInput = document.getElementById("fileInput");
-            const pathInput = document.getElementById("pathInput");
-            const messageDiv = document.getElementById("uploadMessage");
-            
-            if (!fileInput.files[0]) {
-                showMessage("Please select a file to upload", "error");
-                return;
-            }
-            
-            formData.append("file", fileInput.files[0]);
-            
-            // Add path if specified
-            const path = pathInput.value.trim();
-            if (path) {
-                formData.append("path", path);
-            }
-            
-            try {
-                showMessage("Uploading...", "info");
-                
-                const response = await fetch("/upload", {
-                    method: "POST",
-                    body: formData
-                });
-                
-                const result = await response.json();
-                
-                if (result.success) {
-                    showMessage("File uploaded successfully!" + (path ? " to " + path : ""), "success");
-                    fileInput.value = "";
-                    pathInput.value = "";
-                    setTimeout(() => location.reload(), 1500);
-                } else {
-                    showMessage("Upload failed: " + result.message, "error");
-                }
-            } catch (error) {
-                showMessage("Upload failed: " + error.message, "error");
-            }
-        });
-        
-        // Download file
-        function downloadFile(filename) {
-            window.open("/download?filename=" + encodeURIComponent(filename), "_blank");
-        }
-        
-        // Delete file
-        async function deleteFile(filename) {
-            if (!confirm("Are you sure you want to delete \\"" + filename + "\\"?")) {
-                return;
-            }
-            
-            try {
-                const response = await fetch("/delete?filename=" + encodeURIComponent(filename), {
-                    method: "DELETE"
-                });
-                
-                const result = await response.json();
-                
-                if (result.success) {
-                    showMessage("File deleted successfully!", "success");
-                    setTimeout(() => location.reload(), 1000);
-                } else {
-                    showMessage("Delete failed: " + result.message, "error");
-                }
-            } catch (error) {
-                showMessage("Delete failed: " + error.message, "error");
-            }
-        }
-        
-        // Show message
-        function showMessage(message, type) {
-            const messageDiv = document.getElementById("uploadMessage");
-            messageDiv.className = "message " + type;
-            messageDiv.textContent = message;
-            messageDiv.style.display = "block";
-            
-            if (type === "success" || type === "info") {
-                setTimeout(() => {
-                    messageDiv.style.display = "none";
-                }, 3000);
-            }
-        }
-        
-        // Toggle folder visibility
-        function toggleFolder(folderId) {
-            const folderContent = document.getElementById(folderId);
-            const toggleIcon = document.getElementById("toggle-" + folderId);
-            
-            if (folderContent.classList.contains("collapsed")) {
-                folderContent.classList.remove("collapsed");
-                toggleIcon.classList.remove("collapsed");
-                toggleIcon.textContent = "▼";
-            } else {
-                folderContent.classList.add("collapsed");
-                toggleIcon.classList.add("collapsed");
-                toggleIcon.textContent = "▶";
-            }
-        }
-        
-        // Toggle all folders
-        function toggleAllFolders(expand) {
-            const folderContents = document.querySelectorAll(".folder-content");
-            const toggleIcons = document.querySelectorAll(".folder-toggle");
-            
-            folderContents.forEach(function(folder) {
-                if (expand) {
-                    folder.classList.remove("collapsed");
-                } else {
-                    folder.classList.add("collapsed");
-                }
-            });
-            
-            toggleIcons.forEach(function(icon) {
-                if (expand) {
-                    icon.classList.remove("collapsed");
-                    icon.textContent = "▼";
-                } else {
-                    icon.classList.add("collapsed");
-                    icon.textContent = "▶";
-                }
-            });
-        }
-        
-        // Initialize folder states (expand all by default)
-        document.addEventListener("DOMContentLoaded", function() {
-            // You can add code here to remember folder states or set default collapsed folders
-        });
-    </script>
+    <script src="/assets/js/file-manager.js"></script>
 </body>
 </html>';
 }
