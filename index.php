@@ -127,9 +127,39 @@ try {
  * Display the file manager interface
  */
 function displayFileManagerInterface($controller) {
-    // Get list of files
+    // Get ALL files to build the complete folder structure
     $fileListResult = $controller->list();
     $files = $fileListResult['success'] ? $fileListResult['documents'] : [];
+    
+    // Build folder tree structure
+    $folderTree = [];
+    $rootFiles = [];
+    
+    foreach ($files as $file) {
+        $pathParts = explode('/', $file['name']);
+        if (count($pathParts) > 1) {
+            // This is a file in a folder - build the folder path
+            $currentPath = '';
+            for ($i = 0; $i < count($pathParts) - 1; $i++) {
+                $currentPath .= ($i > 0 ? '/' : '') . $pathParts[$i];
+                if (!isset($folderTree[$currentPath])) {
+                    $folderTree[$currentPath] = [
+                        'level' => $i,
+                        'name' => $pathParts[$i],
+                        'fullPath' => $currentPath,
+                        'parent' => $i > 0 ? implode('/', array_slice($pathParts, 0, $i)) : null
+                    ];
+                }
+            }
+        } else {
+            // This is a root level file
+            $file['displayName'] = $file['name'];
+            $rootFiles[] = $file;
+        }
+    }
+    
+    // Sort folders by path to ensure proper nesting order
+    ksort($folderTree);
     
     echo '<!DOCTYPE html>
 <html lang="en">
@@ -251,6 +281,14 @@ function displayFileManagerInterface($controller) {
             margin-bottom: 30px;
         }
         
+        .folder-section.folder-nested {
+            margin-left: 20px;
+            border-left: 3px solid #4CAF50;
+            background: #f5f5f5;
+            border-radius: 8px;
+            padding: 10px;
+        }
+        
         .folder-title {
             color: #0078d4;
             font-size: 1.2rem;
@@ -289,6 +327,36 @@ function displayFileManagerInterface($controller) {
         
         .folder-toggle.collapsed {
             transform: rotate(-90deg);
+        }
+        
+        .folder-file-count {
+            font-size: 0.9rem;
+            color: #888;
+            font-weight: normal;
+        }
+        
+        .loading-indicator {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+            font-style: italic;
+        }
+        
+        .loading-indicator::after {
+            content: "";
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            margin-left: 8px;
+            border: 2px solid #ddd;
+            border-top: 2px solid #666;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
         
         .files-header {
@@ -606,7 +674,7 @@ function displayFileManagerInterface($controller) {
         
         <div class="files-section">
             <div class="files-header">
-                <h2 class="files-count">📂 ' . count($files) . ' file' . (count($files) !== 1 ? 's' : '') . ' stored</h2>
+                <h2 class="files-count">📂 ' . (count($rootFiles) + count($folderTree)) . ' item' . ((count($rootFiles) + count($folderTree)) !== 1 ? 's' : '') . ' at root level</h2>
                 <div class="folder-controls">
                     <button class="folder-control-btn" onclick="toggleAllFolders(false)" title="Collapse all folders">📁 Collapse All</button>
                     <button class="folder-control-btn" onclick="toggleAllFolders(true)" title="Expand all folders">📂 Expand All</button>
@@ -614,47 +682,59 @@ function displayFileManagerInterface($controller) {
                 </div>
             </div>';
     
-    if (empty($files)) {
+    if (empty($rootFiles) && empty($folderTree)) {
         echo '<div class="empty-state">
                 <div class="empty-state-icon">📭</div>
                 <h3>No files uploaded yet</h3>
                 <p>Upload your first file using the form above</p>
               </div>';
     } else {
-        // Group files by folder
-        $filesByFolder = [];
-        foreach ($files as $file) {
-            $pathParts = explode('/', $file['name']);
-            if (count($pathParts) > 1) {
-                $folder = implode('/', array_slice($pathParts, 0, -1));
-                $file['displayName'] = end($pathParts);
-                $file['folder'] = $folder;
-            } else {
-                $folder = 'Root';
-                $file['displayName'] = $file['name'];
-                $file['folder'] = '';
+        // Display folder tree structure
+        foreach ($folderTree as $folderPath => $folder) {
+            $folderId = 'folder-' . md5($folderPath);
+            $indentClass = $folder['level'] > 0 ? ' folder-nested' : '';
+            $indentStyle = $folder['level'] > 0 ? 'margin-left: ' . ($folder['level'] * 20) . 'px;' : '';
+            
+            // Determine parent folder ID for hierarchical visibility
+            $parentFolderId = '';
+            if ($folder['parent']) {
+                $parentFolderId = 'folder-' . md5($folder['parent']);
             }
-            $filesByFolder[$folder][] = $file;
+            
+            // Add data attributes for parent-child relationships
+            $dataAttributes = '';
+            if ($parentFolderId) {
+                $dataAttributes = ' data-parent="' . $parentFolderId . '" data-level="' . $folder['level'] . '"';
+            } else {
+                $dataAttributes = ' data-level="' . $folder['level'] . '"';
+            }
+            
+            // Initially hide subfolders (level > 0)
+            $initialVisibility = $folder['level'] > 0 ? ' style="display: none;' . $indentStyle . '"' : ' style="' . $indentStyle . '"';
+            
+            echo '<div class="folder-section' . $indentClass . '" id="section-' . $folderId . '"' . $dataAttributes . $initialVisibility . '>
+                    <div class="folder-title" onclick="toggleFolder(\'' . $folderId . '\', \'' . htmlspecialchars($folderPath, ENT_QUOTES) . '\')">
+                        <span>' . str_repeat('└─ ', $folder['level']) . '📁 ' . htmlspecialchars($folder['name']) . ' <span class="folder-file-count" id="count-' . $folderId . '">(click to load)</span></span>
+                        <span class="folder-toggle" id="toggle-' . $folderId . '">▶</span>
+                    </div>
+                    <div class="folder-content collapsed" id="' . $folderId . '">
+                        <div class="loading-indicator" style="text-align: center; padding: 20px; color: #666;">
+                            Loading folder contents...
+                        </div>
+                    </div>
+                  </div>';
         }
         
-        // Sort folders
-        ksort($filesByFolder);
-        
-        foreach ($filesByFolder as $folderName => $folderFiles) {
-            $folderId = 'folder-' . md5($folderName);
+        // Display root level files
+        if (!empty($rootFiles)) {
+            echo '<div class="folder-section">
+                    <div class="folder-title">
+                        <span>� Root Files (' . count($rootFiles) . ' files)</span>
+                    </div>
+                    <div class="folder-content">
+                        <div class="files-grid">';
             
-            if ($folderName !== 'Root') {
-                echo '<div class="folder-section">
-                        <div class="folder-title" onclick="toggleFolder(\'' . $folderId . '\')">
-                            <span>📁 ' . htmlspecialchars($folderName) . ' (' . count($folderFiles) . ' files)</span>
-                            <span class="folder-toggle" id="toggle-' . $folderId . '">▼</span>
-                        </div>
-                        <div class="folder-content" id="' . $folderId . '">';
-            }
-            
-            echo '<div class="files-grid">';
-            
-            foreach ($folderFiles as $file) {
+            foreach ($rootFiles as $file) {
                 $fileExt = pathinfo($file['displayName'], PATHINFO_EXTENSION);
                 $isImage = isImageFile($fileExt);
                 $icon = $isImage ? '' : getFileIcon($fileExt);
@@ -708,11 +788,9 @@ function displayFileManagerInterface($controller) {
                       </div>';
             }
             
-            echo '</div>';
-            
-            if ($folderName !== 'Root') {
-                echo '</div></div>';
-            }
+            echo '        </div>
+                    </div>
+                  </div>';
         }
     }
     

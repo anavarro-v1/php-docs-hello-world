@@ -172,12 +172,18 @@ class AzureBlobClient
     }
     
     /**
-     * List all documents in the container
+     * List documents in the container, optionally filtered by prefix
      */
-    public function listDocuments(): array
+    public function listDocuments(string $prefix = ''): array
     {
         try {
             $url = "{$this->baseUrl}/{$this->containerName}?restype=container&comp=list";
+            
+            // Add prefix parameter if specified
+            if (!empty($prefix)) {
+                $url .= "&prefix=" . urlencode($prefix);
+            }
+            
             $date = gmdate('D, d M Y H:i:s T');
             
             $headers = [

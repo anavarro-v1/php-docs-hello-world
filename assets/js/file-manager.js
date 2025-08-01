@@ -86,44 +86,264 @@ function showMessage(message, type) {
     }
 }
 
-// Toggle folder visibility
-function toggleFolder(folderId) {
+// Toggle folder visibility and load contents if needed
+async function toggleFolder(folderId, folderPrefix = null) {
     const folderContent = document.getElementById(folderId);
     const toggleIcon = document.getElementById("toggle-" + folderId);
+    const folderSection = document.getElementById("section-" + folderId);
     
     if (folderContent.classList.contains("collapsed")) {
+        // Expanding folder - load contents if not already loaded
+        if (folderPrefix && folderContent.querySelector('.loading-indicator')) {
+            await loadFolderContents(folderId, folderPrefix);
+        }
+        
         folderContent.classList.remove("collapsed");
         toggleIcon.classList.remove("collapsed");
         toggleIcon.textContent = "▼";
+        
+        // Show immediate child folders
+        showChildFolders(folderId);
+        
     } else {
         folderContent.classList.add("collapsed");
         toggleIcon.classList.add("collapsed");
         toggleIcon.textContent = "▶";
+        
+        // Hide all descendant folders
+        hideDescendantFolders(folderId);
     }
+}
+
+// Show immediate child folders of the given folder
+function showChildFolders(parentFolderId) {
+    const childSections = document.querySelectorAll(`[data-parent="${parentFolderId}"]`);
+    childSections.forEach(section => {
+        section.style.display = 'block';
+    });
+}
+
+// Hide all descendant folders (children, grandchildren, etc.)
+function hideDescendantFolders(parentFolderId) {
+    const childSections = document.querySelectorAll(`[data-parent="${parentFolderId}"]`);
+    
+    childSections.forEach(section => {
+        // Hide the child section
+        section.style.display = 'none';
+        
+        // Collapse the child folder if it's expanded
+        const childFolderId = section.id.replace('section-', '');
+        const childContent = document.getElementById(childFolderId);
+        const childToggle = document.getElementById("toggle-" + childFolderId);
+        
+        if (childContent && !childContent.classList.contains("collapsed")) {
+            childContent.classList.add("collapsed");
+            if (childToggle) {
+                childToggle.classList.add("collapsed");
+                childToggle.textContent = "▶";
+            }
+        }
+        
+        // Recursively hide grandchildren
+        hideDescendantFolders(childFolderId);
+    });
+}
+
+// Load folder contents via AJAX
+async function loadFolderContents(folderId, folderPrefix) {
+    try {
+        const response = await fetch("/list?prefix=" + encodeURIComponent(folderPrefix + "/"));
+        const result = await response.json();
+        
+        const folderContent = document.getElementById(folderId);
+        const countElement = document.getElementById("count-" + folderId);
+        
+        if (result.success && result.documents) {
+            // Filter files to only include those directly in this folder (not in subfolders)
+            const files = result.documents.filter(file => {
+                // Skip the folder prefix itself
+                if (file.name === folderPrefix + "/") {
+                    return false;
+                }
+                
+                // Must start with the folder prefix
+                if (!file.name.startsWith(folderPrefix + "/")) {
+                    return false;
+                }
+                
+                // Get the relative path within the folder
+                const relativePath = file.name.substring(folderPrefix.length + 1);
+                
+                // Only include files directly in this folder (no additional slashes = no subfolders)
+                return !relativePath.includes('/');
+                
+            }).map(file => {
+                // Create relative path within the folder
+                const relativePath = file.name.substring(folderPrefix.length + 1);
+                return {
+                    ...file,
+                    displayName: relativePath,
+                    relativePath: relativePath
+                };
+            });
+            
+            // Update count
+            if (countElement) {
+                countElement.textContent = "(" + files.length + " files)";
+            }
+            
+            // Generate HTML for files
+            let filesHTML = '<div class="files-grid">';
+            
+            files.forEach(file => {
+                const fileExt = getFileExtension(file.displayName);
+                const isImage = isImageFile(file.displayName);
+                const icon = isImage ? '' : getFileIcon(fileExt);
+                const size = formatFileSize(file.size);
+                const lastModified = formatDate(file.lastModified);
+                
+                filesHTML += `
+                    <div class="file-card">
+                        <div class="tooltip${isImage ? ' image-tooltip' : ''}">
+                            <strong>${escapeHtml(file.name)}</strong><br>
+                            Size: ${size}<br>
+                            Type: ${escapeHtml(file.contentType)}<br>
+                            Modified: ${lastModified}<br>
+                            ETag: ${escapeHtml(file.etag)}
+                            ${isImage ? `<br><img src="${escapeHtml(file.url)}" alt="Preview" />` : ''}
+                        </div>`;
+                
+                if (isImage) {
+                    filesHTML += `
+                        <div class="file-icon image-preview">
+                            <img src="${escapeHtml(file.url)}" alt="${escapeHtml(file.displayName)}" />
+                        </div>`;
+                } else {
+                    filesHTML += `<div class="file-icon">${icon}</div>`;
+                }
+                
+                filesHTML += `
+                    <div class="file-name">${escapeHtml(file.displayName)}</div>
+                    <div class="file-meta">${size} • ${lastModified}</div>`;
+                
+                if (isImage) {
+                    filesHTML += `
+                        <div class="image-controls">
+                            <button class="image-control-btn" onclick="rotateImage('${escapeHtml(file.name)}', 90)" title="Rotate 90° clockwise">↻</button>
+                            <button class="image-control-btn" onclick="rotateImage('${escapeHtml(file.name)}', -90)" title="Rotate 90° counter-clockwise">↺</button>
+                            <button class="image-control-btn" onclick="flipImage('${escapeHtml(file.name)}', 'horizontal')" title="Flip horizontally">⇄</button>
+                            <button class="image-control-btn" onclick="flipImage('${escapeHtml(file.name)}', 'vertical')" title="Flip vertically">⇅</button>
+                        </div>`;
+                }
+                
+                filesHTML += `
+                    <div class="file-actions">
+                        <button class="action-btn download-btn" onclick="downloadFile('${escapeHtml(file.name)}')">⬇️ Download</button>
+                        <button class="action-btn delete-btn" onclick="deleteFile('${escapeHtml(file.name)}')">🗑️ Delete</button>
+                    </div>
+                </div>`;
+            });
+            
+            filesHTML += '</div>';
+            folderContent.innerHTML = filesHTML;
+            
+        } else {
+            folderContent.innerHTML = '<div style="text-align: center; padding: 20px; color: #666;">No files found in this folder</div>';
+            if (countElement) {
+                countElement.textContent = "(0 files)";
+            }
+        }
+        
+    } catch (error) {
+        console.error('Failed to load folder contents:', error);
+        const folderContent = document.getElementById(folderId);
+        folderContent.innerHTML = '<div style="text-align: center; padding: 20px; color: #d32f2f;">Failed to load folder contents</div>';
+    }
+}
+
+// Helper functions for file processing
+function getFileExtension(filename) {
+    return filename.split('.').pop().toLowerCase();
+}
+
+function isImageFile(filename) {
+    const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'];
+    const ext = getFileExtension(filename);
+    return imageExtensions.includes(ext);
+}
+
+function getFileIcon(extension) {
+    const icons = {
+        'pdf': '📄', 'doc': '📝', 'docx': '📝', 'xls': '📊', 'xlsx': '📊',
+        'ppt': '📽️', 'pptx': '📽️', 'txt': '📄', 'jpg': '🖼️', 'jpeg': '🖼️',
+        'png': '🖼️', 'gif': '🖼️', 'mp4': '🎬', 'avi': '🎬', 'mov': '🎬',
+        'mp3': '🎵', 'wav': '🎵', 'zip': '📦', 'rar': '📦', 'html': '🌐',
+        'css': '🎨', 'js': '⚡', 'php': '🐘', 'py': '🐍', 'json': '📋', 'xml': '📋'
+    };
+    return icons[extension] || '📄';
+}
+
+function formatFileSize(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+}
+
+function formatDate(dateString) {
+    const date = new Date(dateString);
+    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
 
 // Toggle all folders
 function toggleAllFolders(expand) {
     const folderContents = document.querySelectorAll(".folder-content");
     const toggleIcons = document.querySelectorAll(".folder-toggle");
+    const folderSections = document.querySelectorAll(".folder-section");
     
-    folderContents.forEach(function(folder) {
-        if (expand) {
+    if (expand) {
+        // Show all folder sections and expand their content
+        folderSections.forEach(function(section) {
+            section.style.display = 'block';
+        });
+        
+        folderContents.forEach(function(folder) {
             folder.classList.remove("collapsed");
-        } else {
-            folder.classList.add("collapsed");
-        }
-    });
-    
-    toggleIcons.forEach(function(icon) {
-        if (expand) {
+        });
+        
+        toggleIcons.forEach(function(icon) {
             icon.classList.remove("collapsed");
             icon.textContent = "▼";
-        } else {
+        });
+    } else {
+        // Collapse all folders and hide nested ones
+        folderContents.forEach(function(folder) {
+            folder.classList.add("collapsed");
+        });
+        
+        toggleIcons.forEach(function(icon) {
             icon.classList.add("collapsed");
             icon.textContent = "▶";
-        }
-    });
+        });
+        
+        // Hide all nested folders (level > 0)
+        folderSections.forEach(function(section) {
+            const level = section.getAttribute('data-level');
+            if (level && parseInt(level) > 0) {
+                section.style.display = 'none';
+            }
+        });
+    }
+    
+    // Note: When expanding all, folders will load their contents when individually toggled
+    // This prevents loading all folder contents at once which could be slow
 }
 
 // Image manipulation functions

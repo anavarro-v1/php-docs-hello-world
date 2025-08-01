@@ -133,7 +133,7 @@ class DocumentController
     }
     
     /**
-     * List all documents
+     * List documents, optionally filtered by prefix
      */
     public function list(): array
     {
@@ -142,7 +142,11 @@ class DocumentController
                 return $this->errorResponse('Method not allowed', 405);
             }
             
-            return $this->blobClient->listDocuments();
+            // Get optional prefix parameter
+            $prefix = $_GET['prefix'] ?? '';
+            $prefix = $this->sanitizePath($prefix);
+            
+            return $this->blobClient->listDocuments($prefix);
             
         } catch (\Exception $e) {
             return $this->errorResponse('List failed: ' . $e->getMessage(), 500);
