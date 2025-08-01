@@ -704,9 +704,9 @@ function displayFileManagerInterface($controller) {
             // Add data attributes for parent-child relationships
             $dataAttributes = '';
             if ($parentFolderId) {
-                $dataAttributes = ' data-parent="' . $parentFolderId . '" data-level="' . $folder['level'] . '"';
+                $dataAttributes = ' data-parent="' . $parentFolderId . '" data-level="' . $folder['level'] . '" data-folder-prefix="' . htmlspecialchars($folderPath, ENT_QUOTES) . '"';
             } else {
-                $dataAttributes = ' data-level="' . $folder['level'] . '"';
+                $dataAttributes = ' data-level="' . $folder['level'] . '" data-folder-prefix="' . htmlspecialchars($folderPath, ENT_QUOTES) . '"';
             }
             
             // Initially hide subfolders (level > 0)

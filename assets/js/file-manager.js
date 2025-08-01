@@ -303,7 +303,7 @@ function escapeHtml(text) {
 }
 
 // Toggle all folders
-function toggleAllFolders(expand) {
+async function toggleAllFolders(expand) {
     const folderContents = document.querySelectorAll(".folder-content");
     const toggleIcons = document.querySelectorAll(".folder-toggle");
     const folderSections = document.querySelectorAll(".folder-section");
@@ -322,6 +322,29 @@ function toggleAllFolders(expand) {
             icon.classList.remove("collapsed");
             icon.textContent = "▼";
         });
+        
+        // Load content for folders that haven't been loaded yet
+        const loadingPromises = [];
+        folderSections.forEach(function(section) {
+            const folderContent = section.querySelector('.folder-content');
+            if (folderContent && folderContent.querySelector('.loading-indicator')) {
+                const folderId = folderContent.id;
+                const folderPrefix = section.getAttribute('data-folder-prefix');
+                if (folderPrefix) {
+                    loadingPromises.push(loadFolderContents(folderId, folderPrefix));
+                }
+            }
+        });
+        
+        // Wait for all folders to load
+        if (loadingPromises.length > 0) {
+            try {
+                await Promise.all(loadingPromises);
+            } catch (error) {
+                console.error('Error loading some folder contents:', error);
+            }
+        }
+        
     } else {
         // Collapse all folders and hide nested ones
         folderContents.forEach(function(folder) {
@@ -341,9 +364,6 @@ function toggleAllFolders(expand) {
             }
         });
     }
-    
-    // Note: When expanding all, folders will load their contents when individually toggled
-    // This prevents loading all folder contents at once which could be slow
 }
 
 // Image manipulation functions
